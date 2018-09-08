@@ -1,0 +1,119 @@
+{% extends 'layout.twig' %}
+
+{% block body %}
+	<div id="vote-wrapper" class="vote-wrapper" style="background-color: #08415c">
+		<h1 id="title"></h1>
+		<div class="container">
+			<h1 style="color: #3fa34d;">YES: <span id="yes-count">0</span></h1>
+			<h1 style="color: #cc2936">NO: <span id="no-count">0</span></h1>
+<!-- 		<button id="start" onclick="startVoting()">Start</button>
+			<button id="end" onclick="endVoting()">End</button>
+			<button id="reset" onclick="location.reload()">Reset</button> -->
+		</div>
+	</div>
+	<script>
+		var isVoteRunning = false;
+		var client = null;
+		var votes = {};
+
+		function startVoting( topic ) {
+			votes = {};
+			isVoteRunning = true;
+			$("#title").text( topic );
+			$("#yes-count").text("0 (0%)");
+			$("#no-count").text("0 (0%)");
+			client.action( "#{{ username }}", "Voting has started for '" + topic + "' (Type yes / no to vote!)" );
+			$("#vote-wrapper").show();
+		}
+
+		function endVoting() {
+			setTimeout( function () {
+				$("#vote-wrapper").hide();
+			}, 2000);
+			isVoteRunning = false;
+			client.action( "#{{ username }}", "Voting has ended! Thank you for your votes!" );
+			var totalCount = 0, yesCount = 0, noCount = 0;
+			for( var voter in votes ) {
+				totalCount++;
+				if( votes[ voter ] == "yes" ) {
+					yesCount++;
+				}
+				else {
+					noCount++;
+				}
+			}
+			console.log("YES: " + yesCount + " NO: " + noCount);
+			client.action( "#{{ username }}", ( yesCount > noCount ? "THE AYES HAVE IT!" : ( yesCount == noCount ? "IT'S A TIE" : "THE NOES HAVE IT!" ) ) + " YES: " + yesCount + " (" + Math.floor( yesCount / totalCount * 100 ) + "%)" + " NO: " + noCount + " (" + Math.floor( noCount / totalCount * 100 ) + "%)" );
+		}
+
+		$( document ).ready(function() {
+			$("#vote-wrapper").hide();
+
+			var options = {
+				options: {
+					debug: false
+				},
+				connection: {
+					reconnect: true,
+				},
+				identity: {
+					username: "{{ username }}",
+				    password: "{{ oauth }}"
+				},
+				channels: ["#{{ username }}"]
+			};
+
+			client = new tmi.client(options);
+
+			// Connect the client to the server..
+			client.connect();
+
+			client.on("chat", function (channel, userstate, message, self) {
+				if( userstate[ "username" ] == "{{ username }}" || userstate[ "mod" ] ) {
+					if( !isVoteRunning && ( message.startsWith( "!startvote" ) || message.startsWith( "!sv" ) ) ) {
+						var topic = message.replace("!sv", "").replace("!startvote", "").trim() || "No Topic Specified";
+						startVoting( topic );
+						return;
+					}
+					if( isVoteRunning && ( message.startsWith( "!endvote" ) || message.startsWith( "!ev" ) ) ) {
+						endVoting();
+						return;
+					}
+				}
+
+				// Vote must be running and only accept chats and whispers
+				if( isVoteRunning && userstate["message-type"] != "action" ) {
+					var isVote = false;
+					var parts = message.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").split(' ');
+					parts.forEach( ( part ) => {
+						if( part.toLowerCase() == "yes" ) {
+							votes[ userstate[ "username" ] ] = "yes";
+							isVote = true;
+						}
+						else if( part.toLowerCase() == "no" ) {
+							votes[ userstate[ "username" ] ] = "no";
+							isVote = true;
+						}
+					});
+
+					if( isVote ) {
+						var totalCount = 0, yesCount = 0, noCount = 0;
+						for( var voter in votes ) {
+							totalCount++;
+							if( votes[ voter ] == "yes" ) {
+								yesCount++;
+							}
+							else {
+								noCount++;
+							}
+						}
+						console.log("YES: " + yesCount + " (" + Math.floor( yesCount / totalCount * 100 ) + "%)" + " NO: " + noCount + " (" + Math.floor( noCount / totalCount * 100 ) + "%)");
+						$("#yes-count").text(yesCount + " (" + Math.floor( yesCount / totalCount * 100 ) + "%)");
+						$("#no-count").text(noCount + " (" + Math.floor( noCount / totalCount * 100 ) + "%)");
+					}
+				}
+				console.log( userstate["display-name"] + ": " + message );
+			});
+		});
+	</script>
+{% endblock %}
