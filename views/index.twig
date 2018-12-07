@@ -4,8 +4,11 @@
 	<div id="vote-wrapper" class="vote-wrapper" style="background-color: #08415c">
 		<h1 id="title"></h1>
 		<div class="container">
-			<h1 style="color: #3fa34d;">YES: <span id="yes-count">0</span></h1>
-			<h1 style="color: #cc2936">NO: <span id="no-count">0</span></h1>
+			<div id="choices"></div>
+			<div id="yesno">
+				<h1 style="color: #3fa34d;">YES: <span id="yes-count">0</span></h1>
+				<h1 style="color: #cc2936">NO: <span id="no-count">0</span></h1>
+			</div>
 <!-- 		<button id="start" onclick="startVoting()">Start</button>
 			<button id="end" onclick="endVoting()">End</button>
 			<button id="reset" onclick="location.reload()">Reset</button> -->
@@ -15,13 +18,30 @@
 		var isVoteRunning = false;
 		var client = null;
 		var votes = {};
+		var choiceOptions = [];
+		var numChoices = 0;
 
-		function startVoting( topic ) {
+		function startVoting( topic, choices = [] ) {
 			votes = {};
 			isVoteRunning = true;
 			$("#title").text( topic );
-			$("#yes-count").text("0 (0%)");
-			$("#no-count").text("0 (0%)");
+			if( choices.length > 0 ) {
+				choiceOptions = choices;
+				numChoices = choices.length;
+				$("#choices").empty();
+				choices.forEach( (x,i) => {
+					$("#choices").append('<h1 style="color: #ffffff;">' + ( i + 1 ) + ': ' + x + ' - <span id="choice-count-' + i + '">0</span></h1>');
+				});
+				$("#choices").show();
+				$("#yesno").hide();
+			}
+			else {
+				numChoices = 0;
+				$("#yes-count").text("0 (0%)");
+				$("#no-count").text("0 (0%)");
+				$("#choices").hide();
+				$("#yesno").show();
+			}
 			client.action( "#{{ username }}", "Voting has started for '" + topic + "' (Type yes / no to vote!)" );
 			$("#vote-wrapper").show();
 		}
@@ -32,18 +52,28 @@
 			}, 2000);
 			isVoteRunning = false;
 			client.action( "#{{ username }}", "Voting has ended! Thank you for your votes!" );
-			var totalCount = 0, yesCount = 0, noCount = 0;
-			for( var voter in votes ) {
-				totalCount++;
-				if( votes[ voter ] == "yes" ) {
-					yesCount++;
+
+			if( numChoices > 0 ) {
+				var voteCounts = [];
+				for( var i = 0; i < numChoices; i++ ) {
+					voteCounts.push( Object.keys( votes ).filter( x => votes[ x ] == i ).length );
 				}
-				else {
-					noCount++;
-				}
+				var totalCount = voteCounts.reduce( (a, b) => a + b );
+				var max = Math.max.apply( null, voteCounts );
+				voteCounts.forEach( (x, i) => {
+					if( x == max ) {
+						client.action( "#{{ username }}", "THE WINNING CHOICE IS: " + choiceOptions[ i ] + " (" + Math.floor( x / totalCount * 100 ) + "%)" );
+					}
+				});
 			}
-			console.log("YES: " + yesCount + " NO: " + noCount);
-			client.action( "#{{ username }}", ( yesCount > noCount ? "THE AYES HAVE IT!" : ( yesCount == noCount ? "IT'S A TIE" : "THE NOES HAVE IT!" ) ) + " YES: " + yesCount + " (" + Math.floor( yesCount / totalCount * 100 ) + "%)" + " NO: " + noCount + " (" + Math.floor( noCount / totalCount * 100 ) + "%)" );
+			else {
+				var totalCount = 0, yesCount = 0, noCount = 0;
+				yesCount = Object.keys( votes ).filter( x => votes[ x ] == "yes" ).length;
+				noCount = Object.keys( votes ).filter( x => votes[ x ] == "no" ).length;
+				totalCount = yesCount + noCount;
+				console.log("YES: " + yesCount + " NO: " + noCount);
+				client.action( "#{{ username }}", ( yesCount > noCount ? "THE AYES HAVE IT!" : ( yesCount == noCount ? "IT'S A TIE" : "THE NOES HAVE IT!" ) ) + " YES: " + yesCount + " (" + Math.floor( yesCount / totalCount * 100 ) + "%)" + " NO: " + noCount + " (" + Math.floor( noCount / totalCount * 100 ) + "%)" );
+			}
 		}
 
 		$( document ).ready(function() {
@@ -75,6 +105,15 @@
 						startVoting( topic );
 						return;
 					}
+					if( !isVoteRunning && ( message.startsWith( "!choicevote" ) || message.startsWith( "!cv" ) ) ) {
+						var text = message.replace("!cv", "").replace("!choicevote", "").trim();
+						var parts = text.split( ":" );
+						if( parts.length > 1 ) {
+							topic = parts[ 0 ];
+							startVoting( topic, parts[ 1 ].split( "," ) );
+						}
+						return;
+					}
 					if( isVoteRunning && ( message.startsWith( "!endvote" ) || message.startsWith( "!ev" ) ) ) {
 						endVoting();
 						return;
@@ -86,30 +125,45 @@
 					var isVote = false;
 					var parts = message.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").split(' ');
 					parts.forEach( ( part ) => {
-						if( part.toLowerCase() == "yes" ) {
-							votes[ userstate[ "username" ] ] = "yes";
-							isVote = true;
+						if( numChoices > 0 ) {
+							var choice = parseInt( part.toLowerCase() );
+							if( choice - 1 < numChoices ) {
+								votes[ userstate[ "username" ] ] = choice - 1;
+								isVote = true;
+							}
 						}
-						else if( part.toLowerCase() == "no" ) {
-							votes[ userstate[ "username" ] ] = "no";
-							isVote = true;
+						else {
+							if( part.toLowerCase() == "yes" ) {
+								votes[ userstate[ "username" ] ] = "yes";
+								isVote = true;
+							}
+							else if( part.toLowerCase() == "no" ) {
+								votes[ userstate[ "username" ] ] = "no";
+								isVote = true;
+							}
 						}
 					});
 
 					if( isVote ) {
-						var totalCount = 0, yesCount = 0, noCount = 0;
-						for( var voter in votes ) {
-							totalCount++;
-							if( votes[ voter ] == "yes" ) {
-								yesCount++;
+						if( numChoices > 0 ) {
+							var voteCounts = [];
+							for( var i = 0; i < numChoices; i++ ) {
+								voteCounts.push( Object.keys( votes ).filter( x => votes[ x ] == i ).length );
 							}
-							else {
-								noCount++;
+							var totalCount = voteCounts.reduce( (a, b) => a + b );
+							for( var i = 0; i < numChoices; i++ ) {
+								$("#choice-count-" + i).text( voteCounts[ i ] + " (" + Math.floor( voteCounts[ i ] / totalCount * 100 ) + "%)" );
 							}
 						}
-						console.log("YES: " + yesCount + " (" + Math.floor( yesCount / totalCount * 100 ) + "%)" + " NO: " + noCount + " (" + Math.floor( noCount / totalCount * 100 ) + "%)");
-						$("#yes-count").text(yesCount + " (" + Math.floor( yesCount / totalCount * 100 ) + "%)");
-						$("#no-count").text(noCount + " (" + Math.floor( noCount / totalCount * 100 ) + "%)");
+						else {
+							var totalCount = 0, yesCount = 0, noCount = 0;
+							yesCount = Object.keys( votes ).filter( x => votes[ x ] == "yes" ).length;
+							noCount = Object.keys( votes ).filter( x => votes[ x ] == "no" ).length;
+							totalCount = yesCount + noCount;
+							console.log("YES: " + yesCount + " (" + Math.floor( yesCount / totalCount * 100 ) + "%)" + " NO: " + noCount + " (" + Math.floor( noCount / totalCount * 100 ) + "%)");
+							$("#yes-count").text(yesCount + " (" + Math.floor( yesCount / totalCount * 100 ) + "%)");
+							$("#no-count").text(noCount + " (" + Math.floor( noCount / totalCount * 100 ) + "%)");
+						}
 					}
 				}
 				console.log( userstate["display-name"] + ": " + message );
